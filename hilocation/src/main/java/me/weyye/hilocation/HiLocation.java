@@ -19,7 +19,9 @@ public class HiLocation {
     private AMapLocationClient mLocationClient;
     private Context mContext;
     private boolean mIsOnceLocation;
-    private LocationListener mLocationListener;
+    private HiLocationListener mHiLocationListener;
+
+    private static HiLocation mInstance;
 
     public HiLocation(Context context) {
         mContext = context;
@@ -33,8 +35,22 @@ public class HiLocation {
         mLocationOption.setLocationMode(AMapLocationClientOption.AMapLocationMode.Hight_Accuracy);
     }
 
-    public static HiLocation create(Context context) {
-        return new HiLocation(context);
+    public static HiLocation with(Context context) {
+        if (mInstance == null) {
+            synchronized (HiLocation.class) {
+                if (mInstance == null) {
+                    mInstance = new HiLocation(context);
+                }
+            }
+        }
+        return mInstance;
+    }
+
+    public static HiLocation getInstance() {
+        if (mInstance == null) {
+            throw new IllegalArgumentException("请先调用HiLocation.with(Context context)");
+        }
+        return mInstance;
     }
 
     public HiLocation mode(AMapLocationClientOption.AMapLocationMode mode) {
@@ -70,13 +86,18 @@ public class HiLocation {
     }
 
     public HiLocation onDestory() {
+        mHiLocationListener.onDestory();
+        mLocationClient.stopLocation();
         mLocationClient.onDestroy();
         return this;
     }
 
     public HiLocation callBack(LocationListener listener) {
-        mLocationListener = listener;
-        mLocationClient.setLocationListener(new HiLocationListener(this));
+
+        if (mHiLocationListener != null)//之前注册过 ，移除掉
+            mLocationClient.unRegisterLocationListener(mHiLocationListener);
+        mHiLocationListener = new HiLocationListener(this, listener);
+        mLocationClient.setLocationListener(mHiLocationListener);
         return this;
     }
 
@@ -88,29 +109,34 @@ public class HiLocation {
 
     static class HiLocationListener implements AMapLocationListener {
 
+        private LocationListener mListener;
         private WeakReference<HiLocation> mHiLocationWeakReference;
-        private HiLocation lo;
+        private HiLocation mHiLocation;
 
-        public HiLocationListener(HiLocation hiLocation) {
-            mHiLocationWeakReference = new WeakReference<HiLocation>(hiLocation);
+        public HiLocationListener(HiLocation hiLocation, LocationListener listener) {
+            mHiLocation = hiLocation;
+            mListener = listener;
         }
 
         @Override
         public void onLocationChanged(AMapLocation aMapLocation) {
-            HiLocation hiLocation = mHiLocationWeakReference.get();
             int errorCode = aMapLocation.getErrorCode();
             if (errorCode == 0) {
                 //只定位一次，停止定位
-                if (hiLocation.mIsOnceLocation)
-                    hiLocation.stop();
+                if (mHiLocation.mIsOnceLocation)
+                    mHiLocation.stop();
                 //定位成功
-                if (hiLocation.mLocationListener != null)
-                    hiLocation.mLocationListener.onSuccess(aMapLocation);
+                if (mListener != null)
+                    mListener.onSuccess(aMapLocation);
             } else if (errorCode != 8) {
                 //因为修改了jar改了包名，所以第一次定位会抛出异常,出现code为8的错误，所以直接过滤
-                if (hiLocation.mLocationListener != null)
-                    hiLocation.mLocationListener.onError(hiLocation.mLocationClient, aMapLocation);
+                if (mListener != null)
+                    mListener.onError(mHiLocation.mLocationClient, aMapLocation);
             }
+        }
+
+        public void onDestory() {
+            mHiLocation = null;
         }
     }
 
